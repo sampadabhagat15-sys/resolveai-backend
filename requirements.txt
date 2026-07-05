@@ -43,6 +43,7 @@ pytesseract==0.3.13
 python-dotenv==1.2.2
 python-jose==3.5.0
 python-multipart==0.0.32
+reportlab==5.0.0
 requests==2.34.2
 rsa==4.9.1
 six==1.17.0
