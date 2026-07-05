@@ -1,5 +1,7 @@
 import uuid
 from datetime import datetime
+from typing import List
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -7,9 +9,10 @@ from sqlalchemy import func
 from app.database import get_db
 from app.models.user import User
 from app.models.case import Case
+from app.models.evidence import Evidence
+from app.models.extracted_data import ExtractedData
 from app.schemas.case import CaseCreate, CaseResponse
 from app.core.deps import get_current_user
-from typing import List
 
 router = APIRouter(prefix="/cases", tags=["Cases"])
 
@@ -18,13 +21,22 @@ def generate_case_number(db: Session) -> str:
     year = datetime.utcnow().year
     prefix = f"RESOLVE-{year}-"
 
-    # Count existing cases this year to determine the next sequence number
     count = db.query(func.count(Case.id)).filter(
         Case.case_number.like(f"{prefix}%")
     ).scalar()
 
     next_number = count + 1
-    return f"{prefix}{next_number:04d}"  # e.g. RESOLVE-2026-0001
+    return f"{prefix}{next_number:04d}"
+
+
+def _compute_total_amount(db: Session, case_id: uuid.UUID):
+    result = db.query(func.sum(ExtractedData.amount)).join(
+        Evidence, ExtractedData.evidence_id == Evidence.id
+    ).filter(
+        Evidence.case_id == case_id,
+        Evidence.is_deleted == False,
+    ).scalar()
+    return result
 
 
 @router.post("/", response_model=CaseResponse, status_code=status.HTTP_201_CREATED)
@@ -43,7 +55,10 @@ def create_case(
     db.add(new_case)
     db.commit()
     db.refresh(new_case)
+
+    new_case.total_amount = _compute_total_amount(db, new_case.id)
     return new_case
+
 
 @router.get("/", response_model=List[CaseResponse])
 def list_my_cases(
@@ -54,4 +69,8 @@ def list_my_cases(
         Case.user_id == current_user.id,
         Case.is_deleted == False,
     ).order_by(Case.created_at.desc()).all()
+
+    for case in cases:
+        case.total_amount = _compute_total_amount(db, case.id)
+
     return cases
