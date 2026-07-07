@@ -16,6 +16,8 @@ from app.models.extracted_data import ExtractedData
 from app.schemas.case import CaseCreate, CaseResponse
 from app.core.deps import get_current_user
 from app.services.complaint_service import build_complaint_text
+from app.models.timeline_event import TimelineEvent
+from app.services.timeline_service import generate_timeline
 
 router = APIRouter(prefix="/cases", tags=["Cases"])
 
@@ -130,3 +132,87 @@ def get_complaint_pdf(
             "Content-Disposition": f'attachment; filename="{case.case_number}_complaint.pdf"'
         },
     )
+@router.post("/{case_id}/timeline/generate")
+def generate_case_timeline(
+    case_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    case = _get_owned_case(db, case_id, current_user)
+
+    evidence_items = db.query(Evidence).filter(
+        Evidence.case_id == case_id,
+        Evidence.is_deleted == False,
+    ).all()
+
+    evidence_items_with_data = []
+    for evidence in evidence_items:
+        extracted = db.query(ExtractedData).filter(
+            ExtractedData.evidence_id == evidence.id
+        ).first()
+        evidence_items_with_data.append((evidence, extracted))
+
+    timeline_result = generate_timeline(evidence_items_with_data)
+
+    if timeline_result is None:
+        raise HTTPException(status_code=500, detail="Timeline generation failed")
+
+    # Clear any previously generated timeline for this case before saving new one
+    db.query(TimelineEvent).filter(TimelineEvent.case_id == case_id).delete()
+
+    saved_events = []
+    for event in timeline_result.get("timeline", []):
+        ts = None
+        if event.get("timestamp"):
+            try:
+                ts = datetime.fromisoformat(event["timestamp"])
+            except ValueError:
+                ts = None
+
+        new_event = TimelineEvent(
+            case_id=case_id,
+            event_time=ts,
+            event_description=event.get("event_summary", ""),
+        )
+        db.add(new_event)
+        saved_events.append(new_event)
+
+    for event in timeline_result.get("unordered_events", []):
+        new_event = TimelineEvent(
+            case_id=case_id,
+            event_time=None,
+            event_description=event.get("event_summary", ""),
+        )
+        db.add(new_event)
+        saved_events.append(new_event)
+
+    db.commit()
+
+    return {
+        "message": "Timeline generated successfully",
+        "events_created": len(saved_events),
+        "timeline": timeline_result.get("timeline", []),
+        "unordered_events": timeline_result.get("unordered_events", []),
+    }
+
+
+@router.get("/{case_id}/timeline")
+def get_case_timeline(
+    case_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    case = _get_owned_case(db, case_id, current_user)
+
+    events = db.query(TimelineEvent).filter(
+        TimelineEvent.case_id == case_id
+    ).order_by(TimelineEvent.event_time.asc().nullslast()).all()
+
+    return [
+        {
+            "id": str(e.id),
+            "event_time": e.event_time.isoformat() if e.event_time else None,
+            "event_description": e.event_description,
+        }
+        for e in events
+    ]
