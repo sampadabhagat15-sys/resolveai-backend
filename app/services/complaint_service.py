@@ -27,17 +27,35 @@ Date of Complaint: {complaint_date}
 
 
 def build_complaint_text(case, extracted_data_list, user_name: str) -> str:
-    if len(extracted_data_list) == 1:
+    meaningful_count = sum(
+        1 for tx in extracted_data_list
+        if any([tx.amount is not None, tx.utr_number, tx.transaction_date, tx.transaction_time, tx.merchant_name, tx.beneficiary_upi_id])
+    )
+    if meaningful_count == 1:
         transaction_intro = "an unauthorised UPI transaction"
-    elif len(extracted_data_list) > 1:
-        transaction_intro = f"{len(extracted_data_list)} unauthorised UPI transactions"
+    elif meaningful_count > 1:
+        transaction_intro = f"{meaningful_count} unauthorised UPI transactions"
     else:
         transaction_intro = "unauthorised activity on my account"
 
     if extracted_data_list:
         blocks = []
-        for i, tx in enumerate(extracted_data_list, start=1):
-            lines = [f"Transaction {i}:"]
+        tx_number = 0
+        for tx in extracted_data_list:
+            # Skip entries with no meaningful extracted data at all
+            has_any_data = any([
+                tx.amount is not None,
+                tx.utr_number,
+                tx.transaction_date,
+                tx.transaction_time,
+                tx.merchant_name,
+                tx.beneficiary_upi_id,
+            ])
+            if not has_any_data:
+                continue
+
+            tx_number += 1
+            lines = [f"Transaction {tx_number}:"]
             if tx.amount is not None:
                 lines.append(f"  - Amount: Rs. {tx.amount}")
             if tx.utr_number:
@@ -51,7 +69,8 @@ def build_complaint_text(case, extracted_data_list, user_name: str) -> str:
             if tx.beneficiary_upi_id:
                 lines.append(f"  - Beneficiary UPI ID: {tx.beneficiary_upi_id}")
             blocks.append("\n".join(lines))
-        transaction_details = "\n\n".join(blocks)
+
+        transaction_details = "\n\n".join(blocks) if blocks else "No transaction details have been extracted yet for this case."
     else:
         transaction_details = "No transaction details have been extracted yet for this case."
 
