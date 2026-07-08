@@ -18,6 +18,8 @@ from app.core.deps import get_current_user
 from app.services.complaint_service import build_complaint_text
 from app.models.timeline_event import TimelineEvent
 from app.services.timeline_service import generate_timeline
+from app.models.fraud_indicator import FraudIndicator, Severity
+from app.services.fraud_detection_service import analyze_fraud_patterns
 
 router = APIRouter(prefix="/cases", tags=["Cases"])
 
@@ -152,8 +154,7 @@ def generate_case_timeline(
         ).first()
         evidence_items_with_data.append((evidence, extracted))
 
-    timeline_result = generate_timeline(evidence_items_with_data)
-
+    timeline_result = generate_timeline(evidence_items_with_data, case_description=case.description)
     if timeline_result is None:
         raise HTTPException(status_code=500, detail="Timeline generation failed")
 
@@ -215,4 +216,91 @@ def get_case_timeline(
             "event_description": e.event_description,
         }
         for e in events
+    ]
+@router.post("/{case_id}/fraud-analysis")
+def run_fraud_analysis(
+    case_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    case = _get_owned_case(db, case_id, current_user)
+
+    events = db.query(TimelineEvent).filter(
+        TimelineEvent.case_id == case_id
+    ).order_by(TimelineEvent.event_time.asc().nullslast()).all()
+
+    if not events:
+        raise HTTPException(
+            status_code=400,
+            detail="No timeline found for this case. Generate a timeline first."
+        )
+
+    timeline_list = []
+    unordered_list = []
+    for e in events:
+        item = {"event_summary": e.event_description, "source_type": "evidence"}
+        if e.event_time:
+            item["timestamp"] = e.event_time.isoformat()
+            timeline_list.append(item)
+        else:
+            unordered_list.append(item)
+
+    timeline_data = {"timeline": timeline_list, "unordered_events": unordered_list}
+
+    analysis = analyze_fraud_patterns(timeline_data)
+
+    if analysis is None:
+        raise HTTPException(status_code=500, detail="Fraud analysis failed")
+
+    # Clear previous fraud indicators for this case before saving new ones
+    db.query(FraudIndicator).filter(FraudIndicator.case_id == case_id).delete()
+
+    saved_indicators = []
+    for flagged in analysis.get("flagged_patterns", []):
+        severity_str = flagged.get("confidence", "medium").lower()
+        try:
+            severity = Severity(severity_str)
+        except ValueError:
+            severity = Severity.medium
+
+        indicator = FraudIndicator(
+            case_id=case_id,
+            indicator_type=flagged.get("pattern", "unknown"),
+            description=flagged.get("supporting_evidence", ""),
+            severity=severity,
+        )
+        db.add(indicator)
+        saved_indicators.append(indicator)
+
+    db.commit()
+
+    return {
+        "message": "Fraud analysis completed",
+        "indicators_flagged": len(saved_indicators),
+        "flagged_patterns": analysis.get("flagged_patterns", []),
+        "evidence_completeness_score": analysis.get("evidence_completeness_score"),
+        "missing_evidence": analysis.get("missing_evidence", []),
+    }
+
+
+@router.get("/{case_id}/fraud-indicators")
+def get_fraud_indicators(
+    case_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    case = _get_owned_case(db, case_id, current_user)
+
+    indicators = db.query(FraudIndicator).filter(
+        FraudIndicator.case_id == case_id
+    ).all()
+
+    return [
+        {
+            "id": str(i.id),
+            "indicator_type": i.indicator_type,
+            "description": i.description,
+            "severity": i.severity.value,
+        }
+        for i in indicators
     ]

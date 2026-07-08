@@ -46,12 +46,22 @@ EVIDENCE ITEMS:
 """
 
 
-def build_evidence_list_for_timeline(evidence_items_with_data):
+def build_evidence_list_for_timeline(evidence_items_with_data, case_description=None):
     """
     evidence_items_with_data: list of tuples (Evidence, ExtractedData or None)
+    case_description: the user's own written account of the fraud, if provided
     Returns a list of dicts matching the shape TIMELINE_PROMPT expects.
     """
     formatted = []
+
+    if case_description:
+        formatted.append({
+            "timestamp": None,
+            "source_type": "user_description",
+            "extracted_fields": {},
+            "raw_text": case_description,
+        })
+
     for evidence, extracted in evidence_items_with_data:
         timestamp = None
         extracted_fields = {}
@@ -79,8 +89,8 @@ def build_evidence_list_for_timeline(evidence_items_with_data):
     return formatted
 
 
-def generate_timeline(evidence_items_with_data) -> dict | None:
-    evidence_list = build_evidence_list_for_timeline(evidence_items_with_data)
+def generate_timeline(evidence_items_with_data, case_description=None) -> dict | None:
+    evidence_list = build_evidence_list_for_timeline(evidence_items_with_data, case_description)
 
     if not evidence_list:
         return {"timeline": [], "unordered_events": []}
