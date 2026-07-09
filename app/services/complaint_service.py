@@ -13,7 +13,7 @@ I am writing to report {transaction_intro} that occurred without my authorisatio
 
 {transaction_details}
 
-{description_section}I request an immediate investigation into this matter and appropriate action, including reversal of the disputed amount(s), under the RBI's Limited Liability guidelines for unauthorised electronic transactions.
+{description_section}{fraud_indicators_section}I request an immediate investigation into this matter and appropriate action, including reversal of the disputed amount(s), under the RBI's Limited Liability guidelines for unauthorised electronic transactions.
 
 I am attaching supporting evidence (screenshots, messages) that substantiate this complaint. Please treat this as a formal, time-sensitive request given the nature of the fraud involved.
 
@@ -26,7 +26,7 @@ Date of Complaint: {complaint_date}
 """
 
 
-def build_complaint_text(case, extracted_data_list, user_name: str) -> str:
+def build_complaint_text(case, extracted_data_list, user_name: str, fraud_indicators=None) -> str:
     meaningful_count = sum(
         1 for tx in extracted_data_list
         if any([tx.amount is not None, tx.utr_number, tx.transaction_date, tx.transaction_time, tx.merchant_name, tx.beneficiary_upi_id])
@@ -78,11 +78,29 @@ def build_complaint_text(case, extracted_data_list, user_name: str) -> str:
     if case.description:
         description_section = f"Additional details: {case.description}\n\n"
 
+    fraud_indicators_section = ""
+    if fraud_indicators:
+        pattern_names = {
+            "fake_qr_code_scam": "Fake QR Code Scam",
+            "phishing_link": "Phishing Link",
+            "impersonation_scam": "Impersonation Scam",
+            "kyc_update_scam": "KYC Update Scam",
+            "collect_request_scam": "Collect Request Scam",
+            "remote_access_scam": "Remote Access Scam",
+            "fake_refund_scam": "Fake Refund Scam",
+        }
+        lines = ["Fraud Indicators Identified:\n"]
+        for indicator in fraud_indicators:
+            readable_name = pattern_names.get(indicator.indicator_type, indicator.indicator_type)
+            lines.append(f"- {readable_name} ({indicator.severity.value} confidence): {indicator.description}")
+        fraud_indicators_section = "\n".join(lines) + "\n\n"
+
     return COMPLAINT_TEMPLATE.format(
         case_number=case.case_number,
         transaction_intro=transaction_intro,
         transaction_details=transaction_details,
         description_section=description_section,
+        fraud_indicators_section=fraud_indicators_section,
         user_name=user_name,
         complaint_date=datetime.utcnow().strftime("%d %B %Y"),
     )

@@ -111,8 +111,9 @@ def get_complaint_text(
 ):
     case = _get_owned_case(db, case_id, current_user)
     extracted_data_list = _get_extracted_data_for_case(db, case_id)
+    fraud_indicators = db.query(FraudIndicator).filter(FraudIndicator.case_id == case_id).all()
 
-    complaint_text = build_complaint_text(case, extracted_data_list, current_user.full_name)
+    complaint_text = build_complaint_text(case, extracted_data_list, current_user.full_name, fraud_indicators)
     return {"complaint_text": complaint_text}
 
 @router.get("/{case_id}/complaint/pdf")
@@ -123,8 +124,9 @@ def get_complaint_pdf(
 ):
     case = _get_owned_case(db, case_id, current_user)
     extracted_data_list = _get_extracted_data_for_case(db, case_id)
+    fraud_indicators = db.query(FraudIndicator).filter(FraudIndicator.case_id == case_id).all()
 
-    complaint_text = build_complaint_text(case, extracted_data_list, current_user.full_name)
+    complaint_text = build_complaint_text(case, extracted_data_list, current_user.full_name, fraud_indicators)
     pdf_bytes = generate_complaint_pdf(complaint_text)
 
     return Response(
