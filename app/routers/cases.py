@@ -13,7 +13,7 @@ from app.models.user import User
 from app.models.case import Case
 from app.models.evidence import Evidence
 from app.models.extracted_data import ExtractedData
-from app.schemas.case import CaseCreate, CaseResponse
+from app.schemas.case import CaseCreate, CaseUpdate, CaseResponse
 from app.core.deps import get_current_user
 from app.services.complaint_service import build_complaint_text
 from app.models.timeline_event import TimelineEvent
@@ -101,6 +101,28 @@ def list_my_cases(
         case.total_amount = _compute_total_amount(db, case.id)
 
     return cases
+
+@router.patch("/{case_id}", response_model=CaseResponse)
+def update_case(
+    case_id: uuid.UUID,
+    case_data: CaseUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    case = _get_owned_case(db, case_id, current_user)
+
+    if case_data.title is not None:
+        case.title = case_data.title
+    if case_data.fraud_type is not None:
+        case.fraud_type = case_data.fraud_type
+    if case_data.description is not None:
+        case.description = case_data.description
+
+    db.commit()
+    db.refresh(case)
+
+    case.total_amount = _compute_total_amount(db, case.id)
+    return case
 
 
 @router.get("/{case_id}/complaint")

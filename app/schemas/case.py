@@ -11,6 +11,10 @@ class CaseCreate(BaseModel):
     fraud_type: Optional[str] = None
     description: Optional[str] = None
 
+class CaseUpdate(BaseModel):
+    title: Optional[str] = None
+    fraud_type: Optional[str] = None
+    description: Optional[str] = None
 
 class CaseResponse(BaseModel):
     id: uuid.UUID
