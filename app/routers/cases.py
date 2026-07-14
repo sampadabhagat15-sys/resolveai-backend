@@ -102,6 +102,16 @@ def list_my_cases(
 
     return cases
 
+@router.get("/{case_id}", response_model=CaseResponse)
+def get_case_detail(
+    case_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    case = _get_owned_case(db, case_id, current_user)
+    case.total_amount = _compute_total_amount(db, case.id)
+    return case
+
 @router.patch("/{case_id}", response_model=CaseResponse)
 def update_case(
     case_id: uuid.UUID,

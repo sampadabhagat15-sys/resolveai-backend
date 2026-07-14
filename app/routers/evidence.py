@@ -110,3 +110,26 @@ def upload_evidence(
         db.refresh(evidence)
 
     return created_evidence
+
+@router.get("/case/{case_id}", response_model=List[EvidenceResponse])
+def list_evidence_for_case(
+    case_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Verify the case belongs to this user before showing its evidence
+    from app.models.case import Case
+    case = db.query(Case).filter(
+        Case.id == case_id,
+        Case.user_id == current_user.id,
+        Case.is_deleted == False,
+    ).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    evidence_items = db.query(Evidence).filter(
+        Evidence.case_id == case_id,
+        Evidence.is_deleted == False,
+    ).order_by(Evidence.uploaded_at.asc()).all()
+
+    return evidence_items
