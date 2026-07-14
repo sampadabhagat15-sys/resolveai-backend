@@ -338,3 +338,14 @@ def get_fraud_indicators(
         }
         for i in indicators
     ]
+
+@router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_case(
+    case_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    case = _get_owned_case(db, case_id, current_user)
+    case.is_deleted = True
+    db.commit()
+    return None
